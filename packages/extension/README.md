@@ -101,4 +101,6 @@ The `PLAYWRIGHT_MCP_PROFILE_DIR_NAME` environment variable can be used instead o
 
 ## Troubleshooting
 
-Chrome does not allow extensions to debug a page that contains a frame with a restricted URL, for example a page of another extension (`chrome-extension://`), a `chrome://` page, or a URL with a custom scheme. When such a frame loads, Chrome detaches the Playwright debugger. If the frame stays in the page, the tab is no longer available to the client. This often happens when another extension adds its own frame to every page. Disable that extension on the sites you automate, set its **Site access** to **On click**, or use a profile without it. Then navigate again.
+Chrome does not allow extensions to debug a page that contains a frame with a restricted URL, for example a page of another extension (`chrome-extension://`), a `chrome://` page, or a URL with a custom scheme. When such a frame loads, Chrome detaches the Playwright debugger. The tab remains assigned to its client, but cannot be controlled until Chrome allows debugging again. This often happens when another extension adds its own frame to every page. Disable that extension on the sites you automate, set its **Site access** to **On click**, or use a profile without it. Then navigate again.
+
+The extension retries without removing the restricted frame. Once it reconnects, take a fresh snapshot before continuing; failed actions are not replayed. Removing the tab from its client group, closing it, stopping debugging, or disconnecting the client cancels recovery.
