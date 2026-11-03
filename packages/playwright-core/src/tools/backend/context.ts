@@ -227,6 +227,8 @@ export class Context {
       await this._currentTab!.page.close().catch(() => {});
       this._setCurrentTab(undefined);
     }
+    if (!this._currentTab && this.config.extension && !crashed)
+      throw new Error('No controlled tab is currently available. If Chrome temporarily disconnected it, finish signing in and wait for it to reconnect, then take a fresh snapshot. To open another tab, use browser_tabs with action "new".');
     if (!this._currentTab)
       await this.newTab();
     if (crashed)

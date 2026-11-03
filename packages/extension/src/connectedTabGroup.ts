@@ -67,8 +67,8 @@ export async function cleanupStalePlaywrightGroups(): Promise<void> {
 //  - Relay attaches on its own (initial tab, popup, Target.createTarget) →
 //    `_onTabAttached` pulls the new tab into the group, whose onUpdated event
 //    flows back through `_onTabGroupChanged` for consistency.
-// `_groupTabIds` tracks controlled tabs, caching group membership from Chrome
-// events when grouping is enabled.
+// `_groupTabIds` caches Chrome group membership. The connection retains approved
+// ownership while a tab's debugger is unavailable.
 export class ConnectedTabGroup {
   readonly clientName: string | undefined;
   readonly groupStyle: GroupStyle | undefined;
@@ -102,7 +102,7 @@ export class ConnectedTabGroup {
   }
 
   connectedTabIds(): number[] {
-    return [...this._groupTabIds];
+    return [...this._connection.ownedTabs];
   }
 
   close(reason: string): void {
@@ -110,7 +110,7 @@ export class ConnectedTabGroup {
   }
 
   releaseTab(tabId: number): void {
-    if (!this._groupTabIds.has(tabId))
+    if (!this._connection.ownedTabs.has(tabId))
       return;
     this._groupTabIds.delete(tabId);
     this._connection.detachTab(tabId);
@@ -119,12 +119,12 @@ export class ConnectedTabGroup {
   private _onTabUpdated(tabId: number, changeInfo: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab): void {
     if (this.groupStyle && changeInfo.groupId !== undefined)
       this._onTabGroupChanged(tabId, tab);
-    if (changeInfo.url === undefined)
+    if (changeInfo.url === undefined && changeInfo.status !== 'complete')
       return;
     // Chrome resets per-tab badge state on navigation, so re-apply it.
     if (this._connection.attachedTabs.has(tabId))
       void this._updateBadge(tabId, CONNECTED_BADGE);
-    else if (this._groupTabIds.has(tabId) && !isNonDebuggableUrl(changeInfo.url))
+    else if (this._connection.ownedTabs.has(tabId) && !isNonDebuggableUrl(tab.url))
       this._connection.attachTab(tab);
   }
 
@@ -145,12 +145,12 @@ export class ConnectedTabGroup {
         return;
       }
       this._groupTabIds.add(tabId);
+      this._connection.retainTab(tabId);
       if (!isNonDebuggableUrl(tab.url))
         this._connection.attachTab(tab);
     } else {
       this._groupTabIds.delete(tabId);
-      if (this._connection.attachedTabs.has(tabId))
-        this._connection.detachTab(tabId);
+      this._connection.detachTab(tabId);
     }
   }
 
@@ -166,12 +166,9 @@ export class ConnectedTabGroup {
       this._groupTabIds.add(tabId);
   }
 
-  // The debugger detached (drag-out, tab close, or external action). Clear the
-  // badge but leave the tab in the group — the user's intent is still there,
-  // and a subsequent navigation will re-attach via _onTabUpdated.
   private _onTabDetached(tabId: number): void {
-    if (!this.groupStyle)
-      this._groupTabIds.delete(tabId);
+    if (!this._connection.ownedTabs.has(tabId) && this._groupTabIds.delete(tabId) && this.groupStyle)
+      void ungroupTabs([tabId]);
     void this._updateBadge(tabId, { text: '' });
   }
 
